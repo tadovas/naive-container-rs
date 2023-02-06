@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::borrow::BorrowMut;
 use std::iter::{empty, once};
 
 pub struct Node {
@@ -17,37 +17,38 @@ impl Node {
     }
 
     pub fn insert(&mut self, value: i32) {
-        let mut node = if self.value > value {
-            self.left.as_mut()
+        let node = if self.value > value {
+            self.left.borrow_mut()
         } else {
             // right side has items bigger or equal than node value
-            self.right.as_mut()
+            self.right.borrow_mut()
         };
         match node {
             Some(node) => node.insert(value),
             None => {
-                node.replace(&mut Box::new(Node::new(value)));
+                *node = Some(Box::new(Node::new(value)));
             }
         }
     }
-}
 
-impl IntoIterator for Node {
-    type Item = i32;
-    type IntoIter = Box<dyn Iterator<Item = i32>>;
-
-    fn into_iter(self) -> Self::IntoIter {
+    pub fn iter(&self) -> Box<dyn Iterator<Item = i32>> {
         Box::new(
-            self.left
-                .map(|t| t.into_iter())
+            self.right
+                .as_ref()
+                .map(|t| t.iter())
                 .unwrap_or_else(|| Box::new(empty()))
                 .chain(once(self.value))
                 .chain(
-                    self.right
-                        .map(|t| t.into_iter())
+                    self.left
+                        .as_ref()
+                        .map(|t| t.iter())
                         .unwrap_or_else(|| Box::new(empty())),
                 ),
         )
+    }
+
+    pub fn naive_nth_biggest(&self, index: usize) -> Option<i32> {
+        self.iter().nth(index)
     }
 }
 
@@ -56,9 +57,19 @@ mod test {
 
     #[test]
     fn test_new_node() {
-        let mut iter = Node::new(10).into_iter();
+        let mut iter = Node::new(10).iter();
         assert_eq!(iter.next(), Some(10));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn multiple_inserts() {
+        let mut node = Node::new(10);
+        node.insert(12);
+        node.insert(5);
+        node.insert(11);
+
+        assert_eq!(vec![12, 11, 10, 5], node.iter().collect::<Vec<i32>>())
     }
 
     #[test]
@@ -81,12 +92,12 @@ mod test {
             })),
         };
 
-        let mut iter = node.into_iter();
+        let mut iter = node.iter();
 
-        assert_eq!(iter.next(), Some(5));
-        assert_eq!(iter.next(), Some(10));
-        assert_eq!(iter.next(), Some(11));
         assert_eq!(iter.next(), Some(12));
+        assert_eq!(iter.next(), Some(11));
+        assert_eq!(iter.next(), Some(10));
+        assert_eq!(iter.next(), Some(5));
         assert_eq!(iter.next(), None);
     }
 }
